@@ -61,14 +61,11 @@ function getTransformation(type, quality, maxSize, watermarkPath) {
         withoutEnlargement: true,
         transforms: [
           ['withMetadata'],
-          ['resize', { width: maxSize, height: maxSize, fit: 'inside', withoutEnlargement: true }],
           ['composite', [{
             input: watermarkPath,
-            gravity: 'center',
-            fit: 'inside',
-            width: Math.floor(maxSize * 0.9),  // Watermark width 50% of max size
-            height: Math.floor(maxSize * 0.9)  // Watermark height 50% of max size
+            gravity: 'center'
           }]],
+          ['resize', { width: maxSize, height: maxSize, fit: 'inside', withoutEnlargement: true }],
           ['avif', { quality }]
         ],
       },
