@@ -20,11 +20,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
           // Step 1: Convert to AVIF
           const { stream: avifStream, stat } = await assets.getAsset(key, transformation);
           
-          logger.info(`Original image dimensions: ${stat.width}x${stat.height}`);
-
-          // Get watermark dimensions
-          const watermarkStat = await assets.getAssetInfo(watermarkPath);
-          logger.info(`Watermark dimensions: ${watermarkStat.width}x${watermarkStat.height}`);
+          logger.info(`Processed image dimensions: ${stat.width}x${stat.height}`);
 
           // Step 2: Apply watermark
           const watermarkTransformation = getWatermarkTransformation(watermarkPath, stat.width, stat.height, watermarkSizePercent, minWatermarkWidth);
@@ -90,12 +86,6 @@ function getWatermarkTransformation(watermarkPath, imageWidth, imageHeight, wate
   return {
     transformationParams: {
       transforms: [
-        ['resize', { 
-          width: imageWidth, 
-          height: imageHeight, 
-          fit: 'contain', 
-          background: { r: 0, g: 0, b: 0, alpha: 0 } 
-        }],
         ['composite', [{
           input: watermarkPath,
           gravity: 'center',
@@ -108,8 +98,4 @@ function getWatermarkTransformation(watermarkPath, imageWidth, imageHeight, wate
       ],
     },
   };
-}
-
-async function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
 }
