@@ -1,5 +1,4 @@
 import { defineHook } from "@directus/extensions-sdk";
-import { join } from 'path';
 
 export default defineHook(({ action }, { services, logger, env }) => {
   const { AssetsService, FilesService } = services;
