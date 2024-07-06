@@ -2,104 +2,106 @@ import { defineHook } from "@directus/extensions-sdk";
 
 export default defineHook(({ action }, { services, logger, env }) => {
   const { AssetsService, FilesService } = services;
-  const quality = env.EXTENSIONS_SANE_IMAGE_SIZE_UPLOAD_QUALITY ?? 75;
+  const quality = 75; // Changed to fixed quality of 75 for AVIF
   const maxSize = env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE ?? 1920;
   const watermarkPath = '/directus/extensions/directus-extension-sane-image-size/watermark.png';
-  const watermarkSizePercent = 20; // Watermark size as percentage of the image width
-  const minWatermarkWidth = 100; // Minimum watermark width in pixels
 
   action("files.upload", async ({ payload, key }, context) => {
     if (payload.optimized !== true) {
-      const serviceOptions = { ...context, knex: context.database };
-      const assets = new AssetsService(serviceOptions);
-      const files = new FilesService(serviceOptions);
+      const transformation = getTransformation(payload.type, quality, maxSize);
+      if (transformation !== undefined) {
+        try {
+          const serviceOptions = { ...context, knex: context.database };
+          const assets = new AssetsService(serviceOptions);
+          const files = new FilesService(serviceOptions);
 
-      try {
-        // Step 1: Resize (if necessary) and convert to AVIF
-        const transformation = getTransformation(quality, maxSize);
-        const { stream: avifStream, stat } = await assets.getAsset(key, transformation);
+          const { stream, stat } = await assets.getAsset(key, transformation);
+          
+          // Apply watermark
+          const watermarkedStream = await applyWatermark(stream, watermarkPath);
 
-        logger.info(`Processed image dimensions: ${stat.width}x${stat.height}`);
+          if (stat.size < payload.filesize) {
+            await sleep(4000);
 
-        // Step 2: Apply watermark
-        const watermarkTransformation = getWatermarkTransformation(watermarkPath, stat.width, stat.height, watermarkSizePercent, minWatermarkWidth);
-        logger.info(`Watermark transformation: ${JSON.stringify(watermarkTransformation)}`);
+            // Check for existing thumbnails
+            delete payload.width;
+            delete payload.height;
+            delete payload.size;
 
-        const { stream: finalStream, stat: finalStat } = await assets.getAsset(key, watermarkTransformation, avifStream);
-
-        if (finalStat.size < payload.filesize) {
-          await sleep(4000);
-
-          // Delete existing thumbnail metadata
-          delete payload.width;
-          delete payload.height;
-          delete payload.filesize;
-
-          // Update file metadata
-          payload.type = 'image/avif';
-          payload.filename_download = payload.filename_download.replace(/\.[^/.]+$/, ".avif");
-
-          await files.uploadOne(
-            finalStream,
-            {
-              ...payload,
-              optimized: true,
-            },
-            key,
-            { emitEvents: false }
-          );
-          logger.info(`File ${key} successfully converted to AVIF with fitted watermark`);
-        } else {
-          logger.info(`Skipped optimization for ${key}: new file size not smaller`);
+            files.uploadOne(
+              watermarkedStream,
+              {
+                ...payload,
+                optimized: true,
+                type: 'image/avif', // Set MIME type to AVIF
+              },
+              key,
+              { emitEvents: false }
+            );
+          }
+        } catch (error) {
+          logger.error(`Error processing image: ${error.message}`);
         }
-      } catch (error) {
-        logger.error(`Error processing file ${key}: ${error.message}`);
-        logger.error(`Error stack: ${error.stack}`);
       }
     }
   });
 });
 
-function getTransformation(quality, maxSize) {
-  return {
-    transformationParams: {
-      format: 'avif',
-      quality,
-      width: maxSize,
-      height: maxSize,
-      fit: "inside",
-      withoutEnlargement: true,
-      transforms: [
-        ['avif', { quality }]
-      ],
-    },
-  };
+function getTransformation(type, quality, maxSize) {
+  const format = type.split("/")[1] ?? "";
+  if (["jpg", "jpeg", "png", "webp", "avif"].includes(format)) {
+    return {
+      transformationParams: {
+        format: 'avif', // Always convert to AVIF
+        quality,
+        width: maxSize,
+        height: maxSize,
+        fit: "inside",
+        withoutEnlargement: true,
+        transforms: [
+          ['withMetadata'],
+          ['avif', { quality }],
+        ],
+      },
+    };
+  }
+  return undefined;
 }
 
-function getWatermarkTransformation(watermarkPath, imageWidth, imageHeight, watermarkSizePercent, minWatermarkWidth) {
-  let watermarkWidth = Math.round(imageWidth * (watermarkSizePercent / 100));
-  
-  // Ensure watermark is not smaller than minWatermarkWidth
-  watermarkWidth = Math.max(watermarkWidth, minWatermarkWidth);
-  
-  // Ensure watermark is not larger than the image
-  watermarkWidth = Math.min(watermarkWidth, imageWidth);
+async function applyWatermark(inputStream, watermarkPath) {
+  try {
+    const sharp = require('sharp');
+    const image = sharp(await streamToBuffer(inputStream));
+    const watermark = sharp(watermarkPath);
 
-  return {
-    transformationParams: {
-      transforms: [
-        ['composite', [{
-          input: watermarkPath,
-          gravity: 'center',
-          resize: {
-            width: watermarkWidth,
-            height: Math.round(watermarkWidth * (imageHeight / imageWidth)),
-            fit: 'inside'
-          }
-        }]],
-      ],
-    },
-  };
+    const imageMetadata = await image.metadata();
+
+    // Resize watermark to match the exact dimensions of the target image
+    const resizedWatermark = await watermark
+      .resize(imageMetadata.width, imageMetadata.height, { fit: 'fill' })
+      .toBuffer();
+
+    return image
+      .composite([
+        {
+          input: resizedWatermark,
+          blend: 'over', // This ensures the watermark's transparency is respected
+        },
+      ])
+      .toBuffer();
+  } catch (error) {
+    logger.error(`Error applying watermark: ${error.message}`);
+    return inputStream;
+  }
+}
+
+async function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (chunk) => chunks.push(chunk));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
 }
 
 async function sleep(ms) {
