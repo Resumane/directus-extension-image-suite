@@ -1,18 +1,13 @@
 import { defineHook } from "@directus/extensions-sdk";
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { join } from 'path';
 
 export default defineHook(({ action }, { services, logger, env }) => {
   const { AssetsService, FilesService } = services;
   const quality = env.EXTENSIONS_SANE_IMAGE_SIZE_UPLOAD_QUALITY ?? 75;
   const maxSize = env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE ?? 1920;
   
-  // Get the directory path of the current module
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
-  
   // Define the path to your watermark image
-  const watermarkPath = join(__dirname, 'watermark.png');
+  const watermarkPath = '/directus/extensions/directus-extension-sane-image-size/watermark.png';
 
   action("files.upload", async ({ payload, key }, context) => {
     if (payload.optimized !== true) {
@@ -48,6 +43,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
           }
         } catch (error) {
           logger.error(`Error processing file ${key}: ${error.message}`);
+          logger.error(`Attempted watermark path: ${watermarkPath}`);
         }
       }
     }
