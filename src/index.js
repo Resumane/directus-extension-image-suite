@@ -67,6 +67,19 @@ function getTransformation(type, quality, maxSize) {
   return undefined;
 }
 
+function getWatermarkTransformation(watermarkPath) {
+  return {
+    transformationParams: {
+      transforms: [
+        ['composite', [{
+          input: watermarkPath,
+          gravity: 'center',
+        }]],
+      ],
+    },
+  };
+}
+
 async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
