@@ -15,10 +15,14 @@ export default defineHook(({ action }, { services, logger, env }) => {
           const assets = new AssetsService(serviceOptions);
           const files = new FilesService(serviceOptions);
 
-          const { stream, stat } = await assets.getAsset(key, transformation);
+          // Get the asset with the applied transformation
+          const { stream: transformedStream, stat } = await assets.getAsset(key, transformation);
           
-          // Pass logger to applyWatermark
-          const watermarkedStream = await applyWatermark(stream, watermarkPath, logger);
+          // Convert the transformed stream to a buffer
+          const transformedBuffer = await streamToBuffer(transformedStream);
+
+          // Apply watermark
+          const watermarkedBuffer = await applyWatermark(transformedBuffer, watermarkPath, logger, context.sharp);
 
           if (stat.size < payload.filesize) {
             await sleep(4000);
@@ -28,7 +32,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
             delete payload.size;
 
             files.uploadOne(
-              watermarkedStream,
+              watermarkedBuffer,
               {
                 ...payload,
                 optimized: true,
@@ -46,30 +50,9 @@ export default defineHook(({ action }, { services, logger, env }) => {
   });
 });
 
-function getTransformation(type, quality, maxSize) {
-  const format = type.split("/")[1] ?? "";
-  if (["jpg", "jpeg", "png", "webp", "avif"].includes(format)) {
-    return {
-      transformationParams: {
-        format: 'avif', // Always convert to AVIF
-        quality,
-        width: maxSize,
-        height: maxSize,
-        fit: "inside",
-        withoutEnlargement: true,
-        transforms: [
-          ['withMetadata'],
-          ['avif', { quality }],
-        ],
-      },
-    };
-  }
-  return undefined;
-}
-
-async function applyWatermark(inputStream, watermarkPath, logger, sharp) {
+async function applyWatermark(inputBuffer, watermarkPath, logger, sharp) {
   try {
-    const image = sharp(await streamToBuffer(inputStream));
+    const image = sharp(inputBuffer);
     const watermark = sharp(watermarkPath);
 
     const imageMetadata = await image.metadata();
@@ -88,8 +71,29 @@ async function applyWatermark(inputStream, watermarkPath, logger, sharp) {
       .toBuffer();
   } catch (error) {
     logger.error(`Error applying watermark: ${error.message}`);
-    return inputStream;
+    return inputBuffer;
   }
+}
+
+function getTransformation(type, quality, maxSize) {
+  const format = type.split("/")[1] ?? "";
+  if (["jpg", "jpeg", "png", "webp", "avif"].includes(format)) {
+    return {
+      transformationParams: {
+        format: 'avif',
+        quality,
+        width: maxSize,
+        height: maxSize,
+        fit: "inside",
+        withoutEnlargement: true,
+        transforms: [
+          ['withMetadata'],
+          ['avif', { quality }],
+        ],
+      },
+    };
+  }
+  return undefined;
 }
 
 async function streamToBuffer(stream) {
