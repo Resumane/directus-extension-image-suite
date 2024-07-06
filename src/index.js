@@ -8,57 +8,65 @@ export default defineHook(({ action }, { services, logger, env }) => {
 
   action("files.upload", async ({ payload, key }, context) => {
     if (payload.optimized !== true) {
-      const transformation = getTransformation(payload.type, quality, maxSize);
-      if (transformation !== undefined) {
-        try {
-          const serviceOptions = { ...context, knex: context.database };
-          const assets = new AssetsService(serviceOptions);
-          const files = new FilesService(serviceOptions);
+      try {
+        const serviceOptions = { ...context, knex: context.database };
+        const assets = new AssetsService(serviceOptions);
+        const files = new FilesService(serviceOptions);
 
-          // Get the asset with the applied transformation
-          const { stream: transformedStream, stat } = await assets.getAsset(key, transformation);
-          
-          // Convert the transformed stream to a buffer
-          const transformedBuffer = await streamToBuffer(transformedStream);
+        // Get the original asset
+        const { stream: originalStream } = await assets.getAsset(key, {});
+        
+        // Convert the original stream to a buffer
+        const originalBuffer = await streamToBuffer(originalStream);
 
-          // Apply watermark
-          const watermarkedBuffer = await applyWatermark(transformedBuffer, watermarkPath, logger, context.sharp);
+        // Process the image
+        const processedBuffer = await processImage(originalBuffer, watermarkPath, quality, maxSize, context.sharp, logger);
 
-          if (stat.size < payload.filesize) {
-            await sleep(4000);
+        if (processedBuffer && processedBuffer.length < payload.filesize) {
+          await sleep(4000);
 
-            delete payload.width;
-            delete payload.height;
-            delete payload.size;
+          delete payload.width;
+          delete payload.height;
+          delete payload.size;
 
-            files.uploadOne(
-              watermarkedBuffer,
-              {
-                ...payload,
-                optimized: true,
-                type: 'image/avif',
-              },
-              key,
-              { emitEvents: false }
-            );
-          }
-        } catch (error) {
-          logger.error(`Error processing image: ${error.message}`);
+          await files.uploadOne(
+            processedBuffer,
+            {
+              ...payload,
+              optimized: true,
+              type: 'image/avif',
+            },
+            key,
+            { emitEvents: false }
+          );
         }
+      } catch (error) {
+        logger.error(`Error processing image: ${error.message}`);
       }
     }
   });
 });
 
-async function applyWatermark(inputBuffer, watermarkPath, logger, sharp) {
+async function processImage(inputBuffer, watermarkPath, quality, maxSize, sharp, logger) {
   try {
-    const image = sharp(inputBuffer);
+    let image = sharp(inputBuffer);
+    
+    // Get metadata
+    const metadata = await image.metadata();
+
+    // Resize if necessary
+    if (metadata.width > maxSize || metadata.height > maxSize) {
+      image = image.resize(maxSize, maxSize, { fit: 'inside', withoutEnlargement: true });
+    }
+
+    // Convert to AVIF
+    image = image.avif({ quality });
+
+    // Apply watermark
     const watermark = sharp(watermarkPath);
-
-    const imageMetadata = await image.metadata();
-
+    const watermarkMetadata = await watermark.metadata();
     const resizedWatermark = await watermark
-      .resize(imageMetadata.width, imageMetadata.height, { fit: 'fill' })
+      .resize(metadata.width, metadata.height, { fit: 'fill' })
       .toBuffer();
 
     return image
@@ -70,30 +78,9 @@ async function applyWatermark(inputBuffer, watermarkPath, logger, sharp) {
       ])
       .toBuffer();
   } catch (error) {
-    logger.error(`Error applying watermark: ${error.message}`);
-    return inputBuffer;
+    logger.error(`Error processing image: ${error.message}`);
+    return null;
   }
-}
-
-function getTransformation(type, quality, maxSize) {
-  const format = type.split("/")[1] ?? "";
-  if (["jpg", "jpeg", "png", "webp", "avif"].includes(format)) {
-    return {
-      transformationParams: {
-        format: 'avif',
-        quality,
-        width: maxSize,
-        height: maxSize,
-        fit: "inside",
-        withoutEnlargement: true,
-        transforms: [
-          ['withMetadata'],
-          ['avif', { quality }],
-        ],
-      },
-    };
-  }
-  return undefined;
 }
 
 async function streamToBuffer(stream) {
