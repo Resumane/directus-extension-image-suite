@@ -4,10 +4,13 @@ export default defineHook(({ action }, { services, logger, env }) => {
   const { AssetsService, FilesService } = services;
   const quality = env.EXTENSIONS_SANE_IMAGE_SIZE_UPLOAD_QUALITY ?? 75;
   const maxSize = env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE ?? 1920;
+  
+  // Define the path to your watermark image
+  const watermarkPath = __dirname + '/watermark.png';
 
   action("files.upload", async ({ payload, key }, context) => {
     if (payload.optimized !== true) {
-      const transformation = getTransformation(payload.type, quality, maxSize);
+      const transformation = getTransformation(payload.type, quality, maxSize, watermarkPath);
       if (transformation !== undefined) {
         const serviceOptions = { ...context, knex: context.database };
         const assets = new AssetsService(serviceOptions);
@@ -33,7 +36,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
               key,
               { emitEvents: false }
             );
-            logger.info(`File ${key} successfully converted to AVIF`);
+            logger.info(`File ${key} successfully converted to AVIF with watermark`);
           } else {
             logger.info(`AVIF conversion for ${key} skipped: new file size not smaller`);
           }
@@ -45,7 +48,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
   });
 });
 
-function getTransformation(type, quality, maxSize) {
+function getTransformation(type, quality, maxSize, watermarkPath) {
   const format = type.split("/")[1] ?? "";
   if (["jpg", "jpeg", "png", "webp", "avif"].includes(format)) {
     return {
@@ -56,7 +59,13 @@ function getTransformation(type, quality, maxSize) {
         height: maxSize,
         fit: "inside",
         withoutEnlargement: true,
-        transforms: [["withMetadata"]],
+        transforms: [
+          ["withMetadata"],
+          ["composite", [{
+            input: watermarkPath,
+            gravity: 'center'
+          }]]
+        ],
       },
     };
   }
