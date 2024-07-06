@@ -100,21 +100,22 @@ export default defineHook(({ action }, { services, logger, env }) => {
     return undefined;
   }
 
-function getWatermarkTransformation(watermarkPath) {
-  return {
-    transformationParams: {
-      transforms: [
-        ['composite', [{
-          input: watermarkPath,
-          gravity: 'center',
-          fit: 'contain',
-          width: '100%',
-          height: '100%'
-        }]],
-      ],
-    },
-  };
-}
+  function getWatermarkTransformation(watermarkPath) {
+    return {
+      transformationParams: {
+        transforms: [
+          ['composite', [{
+            input: watermarkPath,
+            gravity: 'center',
+            fit: 'contain',
+            width: '100%',
+            height: '100%'
+          }]],
+        ],
+      },
+    };
+  }
+});
 
 async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
