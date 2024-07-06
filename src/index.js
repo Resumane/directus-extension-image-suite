@@ -27,7 +27,6 @@ export default defineHook(({ action }, { services, logger, env }) => {
             {
               ...payload,
               type: 'image/avif', // Set the MIME type to AVIF
-              filename: `${payload.filename.split('.')[0]}.avif`, // Change file extension to .avif
               optimized: true,
             },
             key,
