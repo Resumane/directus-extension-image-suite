@@ -8,26 +8,32 @@ export default defineHook(({ action }, { services, logger, env }) => {
 
   action("files.upload", async ({ payload, key }, context) => {
     if (payload.optimized !== true) {
-      const transformation = getTransformation(payload.type, quality, maxSize, watermarkPath);
+      const transformation = getTransformation(payload.type, quality, maxSize);
       if (transformation !== undefined) {
         const serviceOptions = { ...context, knex: context.database };
         const assets = new AssetsService(serviceOptions);
         const files = new FilesService(serviceOptions);
 
         try {
-          const { stream, stat } = await assets.getAsset(key, transformation);
+          // Step 1: Resize and convert to AVIF
+          const { stream: resizedStream, stat } = await assets.getAsset(key, transformation);
+          
           if (stat.size < payload.filesize) {
             await sleep(4000);
 
+            // Step 2: Apply watermark
+            const watermarkTransformation = getWatermarkTransformation(watermarkPath);
+            const { stream: finalStream, stat: finalStat } = await assets.getAsset(key, watermarkTransformation, resizedStream);
+
             // Update file metadata
-            payload.width = stat.width;
-            payload.height = stat.height;
-            payload.filesize = stat.size;
+            payload.width = finalStat.width;
+            payload.height = finalStat.height;
+            payload.filesize = finalStat.size;
             payload.type = 'image/avif';
             payload.filename_download = payload.filename_download.replace(/\.[^/.]+$/, ".avif");
 
             await files.uploadOne(
-              stream,
+              finalStream,
               {
                 ...payload,
                 optimized: true,
@@ -47,19 +53,9 @@ export default defineHook(({ action }, { services, logger, env }) => {
   });
 });
 
-function getTransformation(type, quality, maxSize, watermarkPath) {
+function getTransformation(type, quality, maxSize) {
   const format = type.split("/")[1] ?? "";
   if (["jpg", "jpeg", "png", "webp"].includes(format)) {
-    const transforms = [
-      ['withMetadata'],
-      ['resize', { width: maxSize, height: maxSize, fit: 'inside', withoutEnlargement: true }],
-      ['composite', [{
-        input: watermarkPath,
-        gravity: 'center',
-      }]],
-      ['avif', { quality }]
-    ];
-
     return {
       transformationParams: {
         format: 'avif',
@@ -68,11 +64,27 @@ function getTransformation(type, quality, maxSize, watermarkPath) {
         height: maxSize,
         fit: "inside",
         withoutEnlargement: true,
-        transforms,
+        transforms: [
+          ['withMetadata'],
+          ['avif', { quality }]
+        ],
       },
     };
   }
   return undefined;
+}
+
+function getWatermarkTransformation(watermarkPath) {
+  return {
+    transformationParams: {
+      transforms: [
+        ['composite', [{
+          input: watermarkPath,
+          gravity: 'center',
+        }]],
+      ],
+    },
+  };
 }
 
 async function sleep(ms) {
