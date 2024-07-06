@@ -2,7 +2,7 @@ import { defineHook } from "@directus/extensions-sdk";
 
 export default defineHook(({ action }, { services, logger, env }) => {
   const { AssetsService, FilesService } = services;
-  const quality = env.EXTENSIONS_SANE_IMAGE_SIZE_UPLOAD_QUALITY ?? 90;
+  const quality = env.EXTENSIONS_SANE_IMAGE_SIZE_UPLOAD_QUALITY ?? 75;
   const maxSize = env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE ?? 1920;
 
   action("files.upload", async ({ payload, key }, context) => {
@@ -12,25 +12,33 @@ export default defineHook(({ action }, { services, logger, env }) => {
         const serviceOptions = { ...context, knex: context.database };
         const assets = new AssetsService(serviceOptions);
         const files = new FilesService(serviceOptions);
-
-        const { stream, stat } = await assets.getAsset(key, transformation);
-        if (stat.size < payload.filesize) {
-          await sleep(4000);
-
-          // Check for existing thumbnails
-          delete payload.width;
-          delete payload.height;
-          delete payload.size;
-
-          files.uploadOne(
-            stream,
-            {
-              ...payload,
-              optimized: true,
-            },
-            key,
-            { emitEvents: false }
-          );
+        
+        try {
+          const { stream, stat } = await assets.getAsset(key, transformation);
+          if (stat.size < payload.filesize) {
+            await sleep(4000);
+            // Update file metadata
+            delete payload.width;
+            delete payload.height;
+            delete payload.size;
+            payload.type = 'image/avif';
+            payload.filename_download = payload.filename_download.replace(/\.[^/.]+$/, ".avif");
+            
+            await files.uploadOne(
+              stream,
+              {
+                ...payload,
+                optimized: true,
+              },
+              key,
+              { emitEvents: false }
+            );
+            logger.info(`File ${key} successfully converted to AVIF`);
+          } else {
+            logger.info(`AVIF conversion for ${key} skipped: new file size not smaller`);
+          }
+        } catch (error) {
+          logger.error(`Error processing file ${key}: ${error.message}`);
         }
       }
     }
@@ -39,20 +47,16 @@ export default defineHook(({ action }, { services, logger, env }) => {
 
 function getTransformation(type, quality, maxSize) {
   const format = type.split("/")[1] ?? "";
-  if (["jpg", "jpeg", "png", "webp"].includes(format)) {
-    const transforms = [["withMetadata"]];
-    if (format === "jpeg" || format === "jpg") {
-      transforms.push([format, { progressive: true }]);
-    }
+  if (["jpg", "jpeg", "png", "webp", "avif"].includes(format)) {
     return {
       transformationParams: {
-        format,
+        format: 'avif',
         quality,
         width: maxSize,
         height: maxSize,
         fit: "inside",
         withoutEnlargement: true,
-        transforms,
+        transforms: [["withMetadata"]],
       },
     };
   }
