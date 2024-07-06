@@ -67,9 +67,8 @@ function getTransformation(type, quality, maxSize) {
   return undefined;
 }
 
-async function applyWatermark(inputStream, watermarkPath, logger) {
+async function applyWatermark(inputStream, watermarkPath, logger, sharp) {
   try {
-    const sharp = require('sharp');
     const image = sharp(await streamToBuffer(inputStream));
     const watermark = sharp(watermarkPath);
 
