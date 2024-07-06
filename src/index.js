@@ -2,7 +2,7 @@ import { defineHook } from "@directus/extensions-sdk";
 
 export default defineHook(({ action }, { services, logger, env }) => {
   const { AssetsService, FilesService } = services;
-  const quality = 75; // Changed to fixed quality of 75 for AVIF
+  const quality = 75;
   const maxSize = env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE ?? 1920;
   const watermarkPath = '/directus/extensions/directus-extension-sane-image-size/watermark.png';
 
@@ -17,13 +17,12 @@ export default defineHook(({ action }, { services, logger, env }) => {
 
           const { stream, stat } = await assets.getAsset(key, transformation);
           
-          // Apply watermark
-          const watermarkedStream = await applyWatermark(stream, watermarkPath);
+          // Pass logger to applyWatermark
+          const watermarkedStream = await applyWatermark(stream, watermarkPath, logger);
 
           if (stat.size < payload.filesize) {
             await sleep(4000);
 
-            // Check for existing thumbnails
             delete payload.width;
             delete payload.height;
             delete payload.size;
@@ -33,7 +32,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
               {
                 ...payload,
                 optimized: true,
-                type: 'image/avif', // Set MIME type to AVIF
+                type: 'image/avif',
               },
               key,
               { emitEvents: false }
@@ -68,7 +67,7 @@ function getTransformation(type, quality, maxSize) {
   return undefined;
 }
 
-async function applyWatermark(inputStream, watermarkPath) {
+async function applyWatermark(inputStream, watermarkPath, logger) {
   try {
     const sharp = require('sharp');
     const image = sharp(await streamToBuffer(inputStream));
@@ -76,7 +75,6 @@ async function applyWatermark(inputStream, watermarkPath) {
 
     const imageMetadata = await image.metadata();
 
-    // Resize watermark to match the exact dimensions of the target image
     const resizedWatermark = await watermark
       .resize(imageMetadata.width, imageMetadata.height, { fit: 'fill' })
       .toBuffer();
@@ -85,7 +83,7 @@ async function applyWatermark(inputStream, watermarkPath) {
       .composite([
         {
           input: resizedWatermark,
-          blend: 'over', // This ensures the watermark's transparency is respected
+          blend: 'over',
         },
       ])
       .toBuffer();
