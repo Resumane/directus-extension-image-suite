@@ -6,6 +6,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
   const maxSize = env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE ?? 1920;
   const watermarkPath = '/directus/extensions/directus-extension-sane-image-size/watermark.png';
   const watermarkSizePercent = 20; // Watermark size as percentage of the image width
+  const minWatermarkWidth = 100; // Minimum watermark width in pixels
 
   action("files.upload", async ({ payload, key }, context) => {
     if (payload.optimized !== true) {
@@ -20,7 +21,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
           const { stream: avifStream, stat } = await assets.getAsset(key, transformation);
           
           // Step 2: Apply watermark
-          const watermarkTransformation = getWatermarkTransformation(watermarkPath, stat.width, watermarkSizePercent);
+          const watermarkTransformation = getWatermarkTransformation(watermarkPath, stat.width, stat.height, watermarkSizePercent, minWatermarkWidth);
           const { stream: finalStream, stat: finalStat } = await assets.getAsset(key, watermarkTransformation, avifStream);
 
           // Update file metadata
@@ -68,8 +69,15 @@ function getTransformation(type, quality, maxSize) {
   return undefined;
 }
 
-function getWatermarkTransformation(watermarkPath, imageWidth, watermarkSizePercent) {
-  const watermarkWidth = Math.round(imageWidth * (watermarkSizePercent / 100));
+function getWatermarkTransformation(watermarkPath, imageWidth, imageHeight, watermarkSizePercent, minWatermarkWidth) {
+  let watermarkWidth = Math.round(imageWidth * (watermarkSizePercent / 100));
+  
+  // Ensure watermark is not smaller than minWatermarkWidth
+  watermarkWidth = Math.max(watermarkWidth, minWatermarkWidth);
+  
+  // Ensure watermark is not larger than the image
+  watermarkWidth = Math.min(watermarkWidth, imageWidth);
+
   return {
     transformationParams: {
       transforms: [
@@ -78,7 +86,8 @@ function getWatermarkTransformation(watermarkPath, imageWidth, watermarkSizePerc
           gravity: 'center',
           resize: {
             width: watermarkWidth,
-            fit: 'contain'
+            height: imageHeight,
+            fit: 'inside'
           }
         }]],
       ],
