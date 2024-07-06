@@ -8,7 +8,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
 
   action("files.upload", async ({ payload, key }, context) => {
     if (payload.optimized !== true) {
-      const transformation = getTransformation(quality, maxSize, watermarkPath);
+      const transformation = getTransformation(payload.type, quality, maxSize, watermarkPath);
       if (transformation !== undefined) {
         const serviceOptions = { ...context, knex: context.database };
         const assets = new AssetsService(serviceOptions);
@@ -47,29 +47,32 @@ export default defineHook(({ action }, { services, logger, env }) => {
   });
 });
 
-function getTransformation(quality, maxSize, watermarkPath) {
-  return {
-    transformationParams: {
-      format: 'avif',
-      quality,
-      width: maxSize,
-      height: maxSize,
-      fit: "inside",
-      withoutEnlargement: true,
-      transforms: [
-        ['withMetadata'],
-        ['resize', { width: maxSize, height: maxSize, fit: 'inside', withoutEnlargement: true }],
-        ['composite', [{
-          input: watermarkPath,
-          gravity: 'center',
-          fit: 'inside',
-          width: Math.floor(maxSize * 0.2),  // Watermark width 20% of max size
-          height: Math.floor(maxSize * 0.2)  // Watermark height 20% of max size
-        }]],
-        ['avif', { quality }]
-      ],
-    },
-  };
+function getTransformation(type, quality, maxSize, watermarkPath) {
+  const format = type.split("/")[1] ?? "";
+  if (["jpg", "jpeg", "png", "webp"].includes(format)) {
+    const transforms = [
+      ['withMetadata'],
+      ['resize', { width: maxSize, height: maxSize, fit: 'inside', withoutEnlargement: true }],
+      ['composite', [{
+        input: watermarkPath,
+        gravity: 'center',
+      }]],
+      ['avif', { quality }]
+    ];
+
+    return {
+      transformationParams: {
+        format: 'avif',
+        quality,
+        width: maxSize,
+        height: maxSize,
+        fit: "inside",
+        withoutEnlargement: true,
+        transforms,
+      },
+    };
+  }
+  return undefined;
 }
 
 async function sleep(ms) {
