@@ -48,18 +48,19 @@ export default defineHook(({ action }, { services, logger, env }) => {
         if (stat.size < payload.filesize) {
           await sleep(4000);
           
-          // Step 2: Apply fitted watermark
-          const finalBuffer = await applyFittedWatermark(resizedStream, watermarkPath, stat.width, stat.height);
+          // Step 2: Apply watermark
+          const watermarkTransformation = getWatermarkTransformation(watermarkPath);
+          const { stream: finalStream, stat: finalStat } = await assets.getAsset(key, watermarkTransformation, resizedStream);
           
           // Update file metadata
-          payload.width = stat.width;
-          payload.height = stat.height;
-          payload.filesize = finalBuffer.length;
+          payload.width = finalStat.width;
+          payload.height = finalStat.height;
+          payload.filesize = finalStat.size;
           payload.type = 'image/avif';
           payload.filename_download = payload.filename_download.replace(/\.[^/.]+$/, ".avif");
           
           await files.uploadOne(
-            finalBuffer,
+            finalStream,
             {
               ...payload,
               optimized: true,
@@ -89,34 +90,27 @@ export default defineHook(({ action }, { services, logger, env }) => {
           height: maxSize,
           fit: "inside",
           withoutEnlargement: true,
+          transforms: [
+            ['withMetadata'],
+            ['avif', { quality }]
+          ],
         },
       };
     }
     return undefined;
   }
 
-  async function applyFittedWatermark(imageStream, watermarkPath, width, height) {
-    const image = sharp(await streamToBuffer(imageStream));
-    const watermark = sharp(watermarkPath);
-
-    // Resize watermark to fit the image dimensions
-    const resizedWatermark = await watermark
-      .resize(width, height, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .toBuffer();
-
-    return image
-      .composite([{ input: resizedWatermark, gravity: 'center' }])
-      .avif({ quality })
-      .toBuffer();
-  }
-
-  async function streamToBuffer(readableStream) {
-    return new Promise((resolve, reject) => {
-      const chunks = [];
-      readableStream.on('data', (chunk) => chunks.push(chunk));
-      readableStream.on('end', () => resolve(Buffer.concat(chunks)));
-      readableStream.on('error', reject);
-    });
+  function getWatermarkTransformation(watermarkPath) {
+    return {
+      transformationParams: {
+        transforms: [
+          ['composite', [{
+            input: watermarkPath,
+            gravity: 'center',
+          }]],
+        ],
+      },
+    };
   }
 });
 
