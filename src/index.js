@@ -89,7 +89,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
     }
   }
 
-  async function waitForFileReady(fileId, filesService, maxAttempts = 10, interval = 3000) {
+  async function waitForFileReady(fileId, filesService, maxAttempts = 10, interval = 35000) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const fileData = await filesService.readOne(fileId);
