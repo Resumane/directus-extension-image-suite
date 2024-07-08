@@ -5,7 +5,6 @@ export default defineHook(({ action }, { services, logger, env }) => {
   const QUALITY = 75; // Fixed quality for AVIF
   const MAX_SIZE = parseInt(env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE) || 1920;
   const WATERMARK_BASE_PATH = '/directus/extensions/directus-extension-sane-image-size/';
-
   const WATERMARKS = [
     { filename: 'watermark-1920.png', width: 1920, height: 1440 },
     { filename: 'watermark-1920-1080.png', width: 1920, height: 1080 },
@@ -22,6 +21,8 @@ export default defineHook(({ action }, { services, logger, env }) => {
   ];
   const queue = [];
   let isProcessing = false;
+
+  const { useApi } = services;
 
   action("files.upload", async ({ payload, key }, context) => {
     if (!payload.optimized) {
@@ -87,9 +88,10 @@ export default defineHook(({ action }, { services, logger, env }) => {
   }
 
   async function requestThumbnail(fileId) {
+    const api = useApi();
     const thumbnailUrl = `https://bluehorizoncondos.com/assets/${fileId}?key=carousel`;
     try {
-      await fetch(thumbnailUrl);
+      await api.get(thumbnailUrl);
       logger.info(`Thumbnail generated for file ${fileId}`);
     } catch (error) {
       logger.error(`Error generating thumbnail for file ${fileId}: ${error.message}`);
