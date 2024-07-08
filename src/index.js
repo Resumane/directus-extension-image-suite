@@ -7,7 +7,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
   const MAX_SIZE = parseInt(env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE) || 1920;
   const WATERMARK_BASE_PATH = '/directus/extensions/directus-extension-sane-image-size/';
   const THUMBNAIL_BASE_URL = 'https://bluehorizoncondospattaya.com/assets';
-  const THUMBNAIL_PRESETS = ['carousel', 'card-thumbnail'];
+  const THUMBNAIL_PRESETS = ['carousel'];
 
   const WATERMARKS = [
     { filename: 'watermark-1920.png', width: 1920, height: 1440 },
@@ -85,10 +85,8 @@ export default defineHook(({ action }, { services, logger, env }) => {
       // Wait for the file to be ready before requesting the thumbnail
       await waitForFileReady(key, files);
 
-      // Request thumbnails for both presets
-      for (const preset of THUMBNAIL_PRESETS) {
-        await requestThumbnail(key, preset);
-      }
+      // Request thumbnails for the carousel preset only
+      await requestThumbnail(key, THUMBNAIL_PRESETS[0]);
     } catch (error) {
       logger.error(`Error processing file ${key}: ${error.message}`);
     }
