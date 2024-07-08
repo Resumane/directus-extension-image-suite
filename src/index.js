@@ -78,8 +78,21 @@ export default defineHook(({ action }, { services, logger, env }) => {
       };
       
       await files.uploadOne(finalStream, updatedPayload, key, { emitEvents: false });
+
+      // After successfully processing and uploading the image, request the thumbnail
+      await requestThumbnail(key);
     } catch (error) {
       logger.error(`Error processing file ${key}: ${error.message}`);
+    }
+  }
+
+  async function requestThumbnail(fileId) {
+    const thumbnailUrl = `https://bluehorizoncondos.com/assets/${fileId}?key=carousel`;
+    try {
+      await fetch(thumbnailUrl);
+      logger.info(`Thumbnail generated for file ${fileId}`);
+    } catch (error) {
+      logger.error(`Error generating thumbnail for file ${fileId}: ${error.message}`);
     }
   }
 
