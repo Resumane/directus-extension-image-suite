@@ -79,20 +79,46 @@ export default defineHook(({ action }, { services, logger, env }) => {
       
       await files.uploadOne(finalStream, updatedPayload, key, { emitEvents: false });
 
-      // After successfully processing and uploading the image, request the thumbnail
+      // Wait for the file to be ready before requesting the thumbnail
+      await waitForFileReady(key, files);
+
+      // After the file is ready, request the thumbnail
       await requestThumbnail(key);
     } catch (error) {
       logger.error(`Error processing file ${key}: ${error.message}`);
     }
   }
 
+  async function waitForFileReady(fileId, filesService, maxAttempts = 10, interval = 3000) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const fileData = await filesService.readOne(fileId);
+        if (fileData && fileData.filename_disk) {
+          logger.info(`File ${fileId} is ready after ${attempt + 1} attempts`);
+          return;
+        }
+      } catch (error) {
+        logger.warn(`Attempt ${attempt + 1}: File ${fileId} not ready yet. Error: ${error.message}`);
+      }
+      await sleep(interval);
+    }
+    throw new Error(`File ${fileId} not ready after ${maxAttempts} attempts`);
+  }
+
   async function requestThumbnail(fileId) {
     const thumbnailUrl = `https://bluehorizoncondos.com/assets/${fileId}?key=carousel`;
+    logger.info(`Requesting thumbnail for file ${fileId} at URL: ${thumbnailUrl}`);
+
     try {
-      await axios.get(thumbnailUrl);
-      logger.info(`Thumbnail generated for file ${fileId}`);
+      const response = await axios.get(thumbnailUrl);
+      logger.info(`Thumbnail generated for file ${fileId}. Status: ${response.status}`);
     } catch (error) {
       logger.error(`Error generating thumbnail for file ${fileId}: ${error.message}`);
+      logger.error(`Requested URL: ${thumbnailUrl}`);
+      if (error.response) {
+        logger.error(`Response status: ${error.response.status}`);
+        logger.error(`Response data: ${JSON.stringify(error.response.data)}`);
+      }
     }
   }
 
