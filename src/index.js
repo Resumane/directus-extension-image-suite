@@ -2,14 +2,29 @@ import { defineHook } from "@directus/extensions-sdk";
 
 export default defineHook(({ action }, { services, logger, env }) => {
   const { AssetsService, FilesService } = services;
-  const quality = 75; // Fixed quality for AVIF
-  const maxSize = env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE ?? 1920;
-  const watermarkPath = '/directus/extensions/directus-extension-sane-image-size/watermark.png';
+  const QUALITY = 75; // Fixed quality for AVIF
+  const MAX_SIZE = parseInt(env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE) || 1920;
+  const WATERMARK_BASE_PATH = '/directus/extensions/directus-extension-sane-image-size/';
+
+  const WATERMARKS = [
+    { filename: 'watermark-1920.png', width: 1920, height: 1440 },
+    { filename: 'watermark-1920-1080.png', width: 1920, height: 1080 },
+    { filename: 'watermark-1900.png', width: 1900, height: 1425 },
+    { filename: 'watermark-1850.png', width: 1850, height: 1387 },
+    { filename: 'watermark-1800.png', width: 1800, height: 1350 },
+    { filename: 'watermark-1700.png', width: 1700, height: 1275 },
+    { filename: 'watermark-1600.png', width: 1600, height: 1200 },
+    { filename: 'watermark-1500.png', width: 1500, height: 1125 },
+    { filename: 'watermark-1400.png', width: 1400, height: 1050 },
+    { filename: 'watermark-1200.png', width: 1200, height: 900 },
+    { filename: 'watermark-1000.png', width: 1000, height: 750 },
+    { filename: 'watermark-800.png', width: 800, height: 600 },
+  ];
   const queue = [];
   let isProcessing = false;
 
   action("files.upload", async ({ payload, key }, context) => {
-    if (payload.optimized !== true) {
+    if (!payload.optimized) {
       queue.push({ payload, key, context });
       if (!isProcessing) {
         processQueue();
@@ -35,82 +50,118 @@ export default defineHook(({ action }, { services, logger, env }) => {
   }
 
   async function processImage(payload, key, context) {
-    const transformation = getTransformation(payload.type, quality, maxSize);
-    if (transformation !== undefined) {
-      const serviceOptions = { ...context, knex: context.database };
-      const assets = new AssetsService(serviceOptions);
-      const files = new FilesService(serviceOptions);
+    const serviceOptions = { ...context, knex: context.database };
+    const assets = new AssetsService(serviceOptions);
+    const files = new FilesService(serviceOptions);
+    
+    try {
+      const fileData = await files.readOne(key);
+      const { width: originalWidth, height: originalHeight } = fileData;
+      const resizedDimensions = calculateResizedDimensions(originalWidth, originalHeight, MAX_SIZE);
+      const suitableWatermark = getSuitableWatermark(resizedDimensions.width, resizedDimensions.height);
+      const combinedTransformation = getCombinedTransformation(payload.type, suitableWatermark);
+
+      const { stream: finalStream, stat: finalStat } = await assets.getAsset(key, combinedTransformation);
+
+      await sleep(4000);
       
-      try {
-        // Step 1: Resize and convert to AVIF
-        const { stream: resizedStream, stat } = await assets.getAsset(key, transformation);
-        
-        if (stat.size < payload.filesize) {
-          await sleep(4000);
-          
-          // Step 2: Apply watermark
-          const watermarkTransformation = getWatermarkTransformation(watermarkPath);
-          const { stream: finalStream, stat: finalStat } = await assets.getAsset(key, watermarkTransformation, resizedStream);
-          
-          // Update file metadata
-          payload.width = finalStat.width;
-          payload.height = finalStat.height;
-          payload.filesize = finalStat.size;
-          payload.type = 'image/avif';
-          payload.filename_download = payload.filename_download.replace(/\.[^/.]+$/, ".avif");
-          
-          await files.uploadOne(
-            finalStream,
-            {
-              ...payload,
-              optimized: true,
-            },
-            key,
-            { emitEvents: false }
-          );
-          
-          logger.info(`File ${key} successfully converted to AVIF with fitted watermark`);
-        } else {
-          logger.info(`AVIF conversion for ${key} skipped: new file size not smaller`);
-        }
-      } catch (error) {
-        logger.error(`Error processing file ${key}: ${error.message}`);
-      }
+      const newFilename = generateUniqueFilename();
+
+      const updatedPayload = {
+        ...payload,
+        width: resizedDimensions.width,
+        height: resizedDimensions.height,
+        filesize: finalStat.size,
+        type: 'image/avif',
+        filename_download: newFilename,
+        optimized: true,
+      };
+      
+      await files.uploadOne(finalStream, updatedPayload, key, { emitEvents: false });
+    } catch (error) {
+      logger.error(`Error processing file ${key}: ${error.message}`);
     }
   }
 
-  function getTransformation(type, quality, maxSize) {
+  function getSuitableWatermark(imageWidth, imageHeight) {
+    let bestWatermark = null;
+    let bestArea = 0;
+
+    for (const watermark of WATERMARKS) {
+      if (watermark.width <= imageWidth && watermark.height <= imageHeight) {
+        const area = watermark.width * watermark.height;
+        if (area > bestArea) {
+          bestArea = area;
+          bestWatermark = watermark;
+        }
+      }
+    }
+
+    if (bestWatermark) {
+      return {
+        ...bestWatermark,
+        path: WATERMARK_BASE_PATH + bestWatermark.filename,
+        useWidth: bestWatermark.width,
+        useHeight: bestWatermark.height
+      };
+    }
+
+    return null;
+  }
+
+  function getCombinedTransformation(type, watermark) {
     const format = type.split("/")[1] ?? "";
     if (["jpg", "jpeg", "png", "webp"].includes(format)) {
+      const transforms = [
+        ['avif', { quality: QUALITY }]
+      ];
+      
+      if (watermark) {
+        transforms.push(['composite', [{
+          input: watermark.path,
+          gravity: 'center'
+        }]]);
+      }
+
       return {
         transformationParams: {
           format: 'avif',
-          quality,
-          width: maxSize,
-          height: maxSize,
+          quality: QUALITY,
+          width: MAX_SIZE,
+          height: MAX_SIZE,
           fit: "inside",
           withoutEnlargement: true,
-          transforms: [
-            ['withMetadata'],
-            ['avif', { quality }]
-          ],
+          transforms,
         },
       };
     }
     return undefined;
   }
 
-  function getWatermarkTransformation(watermarkPath) {
-    return {
-      transformationParams: {
-        transforms: [
-          ['composite', [{
-            input: watermarkPath,
-            gravity: 'center',
-          }]],
-        ],
-      },
-    };
+  function calculateResizedDimensions(originalWidth, originalHeight, maxSize) {
+    if (originalWidth <= maxSize && originalHeight <= maxSize) {
+      return { width: originalWidth, height: originalHeight };
+    }
+    
+    const aspectRatio = originalWidth / originalHeight;
+    
+    if (aspectRatio > 1) {
+      return {
+        width: maxSize,
+        height: Math.round(maxSize / aspectRatio)
+      };
+    } else {
+      return {
+        width: Math.round(maxSize * aspectRatio),
+        height: maxSize
+      };
+    }
+  }
+
+  function generateUniqueFilename() {
+    const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+    const randomString = Math.random().toString(36).substring(2, 10);
+    return `${timestamp}_${randomString}.avif`;
   }
 });
 
