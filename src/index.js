@@ -106,7 +106,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
   }
 
   async function requestThumbnail(fileId) {
-    const thumbnailUrl = `https://bluehorizoncondos.com/assets/${fileId}?key=carousel`;
+    const thumbnailUrl = `https://bluehorizoncondospattaya.com/assets/${fileId}?key=carousel`;
     logger.info(`Requesting thumbnails for file ${fileId} at URL: ${thumbnailUrl}`);
 
     const formats = [
