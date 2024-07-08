@@ -3,9 +3,12 @@ import axios from 'axios';
 
 export default defineHook(({ action }, { services, logger, env }) => {
   const { AssetsService, FilesService } = services;
-  const QUALITY = 75; // Fixed quality for AVIF
+  const QUALITY = 75;
   const MAX_SIZE = parseInt(env.EXTENSIONS_SANE_IMAGE_SIZE_MAXSIZE) || 1920;
   const WATERMARK_BASE_PATH = '/directus/extensions/directus-extension-sane-image-size/';
+  const THUMBNAIL_BASE_URL = 'https://bluehorizoncondospattaya.com/assets';
+  const THUMBNAIL_PRESETS = ['carousel', 'card-thumbnail'];
+
   const WATERMARKS = [
     { filename: 'watermark-1920.png', width: 1920, height: 1440 },
     { filename: 'watermark-1920-1080.png', width: 1920, height: 1080 },
@@ -82,8 +85,10 @@ export default defineHook(({ action }, { services, logger, env }) => {
       // Wait for the file to be ready before requesting the thumbnail
       await waitForFileReady(key, files);
 
-      // After the file is ready, request the thumbnail
-      await requestThumbnail(key);
+      // Request thumbnails for both presets
+      for (const preset of THUMBNAIL_PRESETS) {
+        await requestThumbnail(key, preset);
+      }
     } catch (error) {
       logger.error(`Error processing file ${key}: ${error.message}`);
     }
@@ -105,9 +110,9 @@ export default defineHook(({ action }, { services, logger, env }) => {
     throw new Error(`File ${fileId} not ready after ${maxAttempts} attempts`);
   }
 
-  async function requestThumbnail(fileId) {
-    const thumbnailUrl = `https://bluehorizoncondospattaya.com/assets/${fileId}?key=carousel`;
-    logger.info(`Requesting thumbnails for file ${fileId} at URL: ${thumbnailUrl}`);
+  async function requestThumbnail(fileId, preset) {
+    const thumbnailUrl = `${THUMBNAIL_BASE_URL}/${fileId}?key=${preset}`;
+    logger.info(`Requesting thumbnails for file ${fileId} with preset ${preset} at URL: ${thumbnailUrl}`);
 
     const formats = [
       { name: 'WebP', accept: 'image/webp' },
@@ -124,16 +129,15 @@ export default defineHook(({ action }, { services, logger, env }) => {
         });
         
         const contentType = response.headers['content-type'];
-        logger.info(`Thumbnail generated for file ${fileId} in ${format.name} format. Status: ${response.status}, Content-Type: ${contentType}`);
+        logger.info(`Thumbnail generated for file ${fileId} with preset ${preset} in ${format.name} format. Status: ${response.status}, Content-Type: ${contentType}`);
         
-        // Verify if the response is in the requested format
         if (contentType === format.accept) {
-          logger.info(`Received ${format.name} image for file ${fileId}`);
+          logger.info(`Received ${format.name} image for file ${fileId} with preset ${preset}`);
         } else {
-          logger.warn(`Requested ${format.name} but received ${contentType} for file ${fileId}`);
+          logger.warn(`Requested ${format.name} but received ${contentType} for file ${fileId} with preset ${preset}`);
         }
       } catch (error) {
-        logger.error(`Error generating ${format.name} thumbnail for file ${fileId}: ${error.message}`);
+        logger.error(`Error generating ${format.name} thumbnail for file ${fileId} with preset ${preset}: ${error.message}`);
         logger.error(`Requested URL: ${thumbnailUrl}`);
         if (error.response) {
           logger.error(`Response status: ${error.response.status}`);
