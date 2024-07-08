@@ -89,7 +89,7 @@ export default defineHook(({ action }, { services, logger, env }) => {
     }
   }
 
-  async function waitForFileReady(fileId, filesService, maxAttempts = 10, interval = 35000) {
+  async function waitForFileReady(fileId, filesService, maxAttempts = 10, interval = 30000) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const fileData = await filesService.readOne(fileId);
@@ -106,18 +106,37 @@ export default defineHook(({ action }, { services, logger, env }) => {
   }
 
   async function requestThumbnail(fileId) {
-    const thumbnailUrl = `https://bluehorizoncondospattaya.com/assets/${fileId}?key=carousel`;
-    logger.info(`Requesting thumbnail for file ${fileId} at URL: ${thumbnailUrl}`);
+    const presets = ['carousel-avif', 'carousel-webp'];
+    
+    for (const preset of presets) {
+      const thumbnailUrl = `https://bluehorizoncondos.com/assets/${fileId}?key=${preset}`;
+      logger.info(`Requesting ${preset} thumbnail for file ${fileId} at URL: ${thumbnailUrl}`);
 
-    try {
-      const response = await axios.get(thumbnailUrl);
-      logger.info(`Thumbnail generated for file ${fileId}. Status: ${response.status}`);
-    } catch (error) {
-      logger.error(`Error generating thumbnail for file ${fileId}: ${error.message}`);
-      logger.error(`Requested URL: ${thumbnailUrl}`);
-      if (error.response) {
-        logger.error(`Response status: ${error.response.status}`);
-        logger.error(`Response data: ${JSON.stringify(error.response.data)}`);
+      try {
+        const response = await axios.get(thumbnailUrl, {
+          headers: {
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+          },
+          responseType: 'arraybuffer'
+        });
+        
+        const contentType = response.headers['content-type'];
+        logger.info(`${preset} thumbnail generated for file ${fileId}. Status: ${response.status}, Content-Type: ${contentType}`);
+        
+        // Verify if the response matches the expected format
+        if ((preset === 'carousel-avif' && contentType === 'image/avif') ||
+            (preset === 'carousel-webp' && contentType === 'image/webp')) {
+          logger.info(`Received correct image format for ${preset} preset, file ${fileId}`);
+        } else {
+          logger.warn(`Received unexpected image format for ${preset} preset, file ${fileId}: ${contentType}`);
+        }
+      } catch (error) {
+        logger.error(`Error generating ${preset} thumbnail for file ${fileId}: ${error.message}`);
+        logger.error(`Requested URL: ${thumbnailUrl}`);
+        if (error.response) {
+          logger.error(`Response status: ${error.response.status}`);
+          logger.error(`Response headers: ${JSON.stringify(error.response.headers)}`);
+        }
       }
     }
   }
