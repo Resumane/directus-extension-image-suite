@@ -1,4 +1,5 @@
 import { defineHook } from "@directus/extensions-sdk";
+import axios from 'axios';
 
 export default defineHook(({ action }, { services, logger, env }) => {
   const { AssetsService, FilesService } = services;
@@ -21,8 +22,6 @@ export default defineHook(({ action }, { services, logger, env }) => {
   ];
   const queue = [];
   let isProcessing = false;
-
-  const { useApi } = services;
 
   action("files.upload", async ({ payload, key }, context) => {
     if (!payload.optimized) {
@@ -88,10 +87,9 @@ export default defineHook(({ action }, { services, logger, env }) => {
   }
 
   async function requestThumbnail(fileId) {
-    const api = useApi();
     const thumbnailUrl = `https://bluehorizoncondos.com/assets/${fileId}?key=carousel`;
     try {
-      await api.get(thumbnailUrl);
+      await axios.get(thumbnailUrl);
       logger.info(`Thumbnail generated for file ${fileId}`);
     } catch (error) {
       logger.error(`Error generating thumbnail for file ${fileId}: ${error.message}`);
