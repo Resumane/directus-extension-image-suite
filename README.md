@@ -12,3 +12,7 @@ This Directus extension, originally forked from [directus-extension-sane-image-s
     - Install via Directus Marketplace (if available).
     - Clone (and build) this repo inside your `extensions` Directus directory.
     - Install into your project via npm.
+
+## Notice
+
+This extension contains hardcoded features. Modifications to the code are necessary for reuse in other projects.
