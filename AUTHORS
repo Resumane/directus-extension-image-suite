@@ -1,4 +1,4 @@
 # This is the list of directus-extension-sane-image-size's significant contributors
 Christian Fuss https://github.com/christian-hackyourshack (For the initial snippet idea)
 Marta Moros Batlle https://github.com/martabitbrain (For the conversion into Directus plugin)
-Resumane https://github.com/Resumane/ (For format conversion, watermarks, thumbnail generation)
+Resumane https://github.com/Resumane/ (Format conversion, watermarks, thumbnail generation; with help from an army of LLMs)
