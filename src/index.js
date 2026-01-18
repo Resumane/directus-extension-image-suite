@@ -102,8 +102,8 @@ export default defineHook(({ action }, { services, logger, env }) => {
         logger.info(`Throttling ${sleepTime}ms after upload for file ${key} (size: ${finalStat.size} bytes)`);
         await sleep(sleepTime);
 
-        // Wait for the file to be ready before requesting the thumbnail
-        await waitForFileReady(key, files);
+        // Wait briefly for the file record to settle before requesting the thumbnail
+        await waitForFileReady(key, files, 2, 2000);
 
         // Request thumbnails for the carousel preset only
         await requestThumbnail(key, THUMBNAIL_PRESETS[0]);
@@ -160,12 +160,13 @@ export default defineHook(({ action }, { services, logger, env }) => {
             headers: {
               'Accept': `${format.accept},image/png,image/jpeg`
             },
-            responseType: 'arraybuffer',
+            responseType: 'stream',
             timeout: 10000 // 10 second timeout
           });
           
           const contentType = response.headers['content-type'];
           logger.info(`Thumbnail generated for file ${fileId} with preset ${preset} in ${format.name} format. Status: ${response.status}, Content-Type: ${contentType}`);
+          await drainStream(response.data);
           
           if (contentType === format.accept) {
             logger.info(`Received ${format.name} image for file ${fileId} with preset ${preset}`);
@@ -290,4 +291,12 @@ export default defineHook(({ action }, { services, logger, env }) => {
 
 async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+async function drainStream(stream) {
+  return new Promise((resolve, reject) => {
+    stream.on('error', reject);
+    stream.on('end', resolve);
+    stream.resume();
+  });
 }
